@@ -1,9 +1,8 @@
-#!/usr/bin/env python3
-
 import glob
 import json
 import os
 import sys
+import subprocess
 
 import requests
 import yaml
@@ -13,7 +12,7 @@ import yaml
 ASSIGNMENTS     = {}
 DREDD_QUIZ_URL  = 'https://dredd.h4x0r.space/quiz/cse-30872-fa24/'
 DREDD_CODE_SLUG = 'debug' if bool(os.environ.get('DEBUG', False)) else 'code'
-DREDD_CODE_URL  = f'https://dredd.h4x0r.space/{DREDD_CODE_SLUG}/cse-30872-fa24/'
+DREDD_CODE_URL  = f'https://leaderboard.williamtheisen.com/code/'
 
 # Utilities
 
@@ -41,6 +40,24 @@ def print_results(results, print_status=True):
     if print_status:
         print('{:>8} {}'.format('Status', 'Success' if int(results.get('status', 1)) == 0 else 'Failure'))
 
+def read_secret_token():
+    """Read the secret token from the secret_token.txt file in the root of the git repository."""
+    print('Reading secret token from secret_token.txt')
+    try:
+        # Get the root directory of the git repository
+        git_root = subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).strip().decode('utf-8')
+        print(f'Git root: {git_root}')
+        secret_token_path = os.path.join(git_root, 'secret_token.txt')
+        print(f'Secret token path: {secret_token_path}')
+        with open(secret_token_path, 'r') as file:
+            return file.read().strip()
+    except subprocess.CalledProcessError:
+        print('Not a git repository or git command failed.')
+        return None
+    except FileNotFoundError:
+        print('secret_token.txt file not found in the git root directory.')
+        return None
+
 # Check Functions
 
 def check_quiz(assignment, path):
@@ -66,23 +83,41 @@ def check_quiz(assignment, path):
 
     return int(response.json().get('status', 1))
 
+
 def check_code(assignment, path):
+    print(f'Checking code for {assignment} in {path}')
     sources = glob.glob(os.path.join(path, 'program.*'))
 
     if not sources:
         print('No code found (program.*)')
         return 1
 
+    # Read secret token
+    secret_token = read_secret_token()
+    if not secret_token:
+        print('Secret token is missing. Cannot proceed with submission.')
+        return 1
+    
     result = 1
     for source in sources:
         print('\nChecking {} {} ...'.format(assignment, os.path.basename(source)))
-        response = requests.post(DREDD_CODE_URL + assignment, files={'source': open(source)})
+        
+        # Add headers to include GitHub username, DREDD_CODE_SLUG, and secret token
+        headers = {
+            'X-Dredd-Code-Slug': DREDD_CODE_SLUG,
+            'X-Submission-Token': secret_token
+        }
+        
+        response = requests.post(
+            DREDD_CODE_URL + assignment, 
+            files={'source': open(source)},
+            headers=headers
+        )
+        print(response)
         print_results(response.json(), False)
 
         result = min(result, int(response.json().get('status', 1)))
     return result
-
-# Main Execution
 
 def main():
     # Add GitLab/GitHub branch
