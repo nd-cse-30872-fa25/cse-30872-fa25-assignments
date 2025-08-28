@@ -7,6 +7,8 @@ import subprocess
 import requests
 import yaml
 
+from pathlib import Path
+
 # Globals
 
 ASSIGNMENTS     = {}
@@ -43,20 +45,29 @@ def print_results(results, print_status=True):
 def read_secret_token():
     """Read the secret token from the secret_token.txt file in the root of the git repository."""
     print('Reading secret token from secret_token.txt')
+
+    ws = os.getenv("GITHUB_WORKSPACE") or os.getenv("GITHUB_WORKSPACE".lower())
+    print(f'ws: {ws}')
+    
+    if ws:
+        p = Path(ws) / "secret_token.txt"
+        print(f"Trying {p}")
+        if p.exists():
+            return p.read_text().strip()
+
     try:
-        # Get the root directory of the git repository
-        git_root = subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).strip().decode('utf-8')
-        print(f'Git root: {git_root}')
-        secret_token_path = os.path.join(git_root, 'secret_token.txt')
-        print(f'Secret token path: {secret_token_path}')
-        with open(secret_token_path, 'r') as file:
-            return file.read().strip()
-    except subprocess.CalledProcessError:
-        print('Not a git repository or git command failed.')
-        return None
-    except FileNotFoundError:
-        print('secret_token.txt file not found in the git root directory.')
-        return None
+        git_root = subprocess.check_output(
+            ['git', 'rev-parse', '--show-toplevel'], text=True
+        ).strip()
+        p = Path(git_root) / "secret_token.txt"
+        print(f"Trying {p}")
+        if p.exists():
+            return p.read_text().strip()
+    except Exception as e:
+        print(f"git fallback skipped/failed: {e}")
+
+    print('secret_token.txt not found')
+    return None
 
 # Check Functions
 
